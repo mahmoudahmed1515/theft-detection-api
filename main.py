@@ -16,13 +16,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# تحميل النموذج بالطريقة المتوافقة تماماً مع TensorFlow 2.20
+# تحميل النموذج بالطريقة المتوافقة
 MODEL_PATH = "base_cnnlstm_final.keras"
 model = None
 
 if os.path.exists(MODEL_PATH):
     try:
-        model = load_model(MODEL_PATH)
+        model = load_model(MODEL_PATH, compile=False)
         print("✅ تم تحميل نموذج الذكاء الاصطناعي بنجاح!")
     except Exception as e:
         print(f"⚠️ تحذير أثناء التحميل: {e}")
@@ -42,27 +42,33 @@ def predict_theft(data: MeterData):
         if not readings:
             raise HTTPException(status_code=400, detail="القراءات فارغة")
 
-        # معالجة القراءات وفحصها
-        arr = np.array(readings)
-        mean_val = np.mean(arr)
-        min_val = np.min(arr)
+        if model is None:
+            raise HTTPException(status_code=500, detail="نموذج الذكاء الاصطناعي لم يتم تحميله في الذاكرة")
+
+        # تجهيز البيانات لتناسب المدخلات (120 يوماً)
+        input_data = np.array(readings, dtype=float)
         
-        is_anomaly = False
-        anomaly_score = 15.0
+        # إعادة تشكيل المصفوفة لتتوافق مع الـ Model Input Shape
+        if input_data.ndim == 1:
+            input_data = np.expand_dims(input_data, axis=0) # تصبح (1, 120)
+            if len(model.input_shape) == 3:
+                input_data = np.expand_dims(input_data, axis=-1) # تصبح (1, 120, 1)
+
+        # التنبؤ الفعلي من الموديل
+        prediction = model.predict(input_data)
         
-        if min_val == 0 and mean_val > 10:
-            is_anomaly = True
-            anomaly_score = 88.5
-        elif mean_val < 5:
-            is_anomaly = True
-            anomaly_score = 75.0
+        # استخراج نسبة الثقة والنتيجة
+        score = float(prediction[0][0]) if prediction.ndim > 1 else float(prediction[0])
+        
+        is_anomaly = score >= 0.5
+        anomaly_score = round(score * 100, 2)
 
         return {
             "CONS_NO": data.CONS_NO,
             "is_anomaly": is_anomaly,
             "anomaly_score": anomaly_score,
             "status": "High Risk / Theft Suspected" if is_anomaly else "Normal Meter",
-            "message": "تم تحليل بيانات العداد بنجاح عبر السيرفر المحلي"
+            "message": "تم تحليل بيانات العداد بنجاح عبر نموذج CNN-LSTM الحقيقي"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
