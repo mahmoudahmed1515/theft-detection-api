@@ -18,7 +18,7 @@ app.add_middleware(
 
 # تحديد المسار المطلق للمجلد الحالي وضبط مسار ملف الموديل بدقة
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "base_cnnlstm_final.keras")
+MODEL_PATH = os.path.join(BASE_DIR, "base_cnnlstm_final.h5")
 model = None
 
 if os.path.exists(MODEL_PATH):
