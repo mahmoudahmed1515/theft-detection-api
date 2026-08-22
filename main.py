@@ -16,8 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# تحميل النموذج بالطريقة المتوافقة
-MODEL_PATH = "base_cnnlstm_final.keras"
+# تحديد المسار المطلق للمجلد الحالي وضبط مسار ملف الموديل بدقة
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "base_cnnlstm_final.keras")
 model = None
 
 if os.path.exists(MODEL_PATH):
@@ -26,6 +27,8 @@ if os.path.exists(MODEL_PATH):
         print("✅ تم تحميل نموذج الذكاء الاصطناعي بنجاح!")
     except Exception as e:
         print(f"⚠️ تحذير أثناء التحميل: {e}")
+else:
+    print(f"❌ ملف الموديل غير موجود في المسار: {MODEL_PATH}")
 
 class MeterData(BaseModel):
     CONS_NO: str
@@ -33,7 +36,11 @@ class MeterData(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "Server is running locally", "model_loaded": model is not None}
+    return {
+        "status": "Server is running successfully", 
+        "model_loaded": model is not None,
+        "model_path": MODEL_PATH
+    }
 
 @app.post("/predict")
 def predict_theft(data: MeterData):
@@ -45,21 +52,18 @@ def predict_theft(data: MeterData):
         if model is None:
             raise HTTPException(status_code=500, detail="نموذج الذكاء الاصطناعي لم يتم تحميله في الذاكرة")
 
-        # تجهيز البيانات لتناسب المدخلات (120 يوماً)
+        # تجهيز البيانات للموديل (120 يوماً)
         input_data = np.array(readings, dtype=float)
         
-        # إعادة تشكيل المصفوفة لتتوافق مع الـ Model Input Shape
         if input_data.ndim == 1:
-            input_data = np.expand_dims(input_data, axis=0) # تصبح (1, 120)
+            input_data = np.expand_dims(input_data, axis=0)
             if len(model.input_shape) == 3:
-                input_data = np.expand_dims(input_data, axis=-1) # تصبح (1, 120, 1)
+                input_data = np.expand_dims(input_data, axis=-1)
 
-        # التنبؤ الفعلي من الموديل
+        # التنبؤ الحقيقي
         prediction = model.predict(input_data)
         
-        # استخراج نسبة الثقة والنتيجة
         score = float(prediction[0][0]) if prediction.ndim > 1 else float(prediction[0])
-        
         is_anomaly = score >= 0.5
         anomaly_score = round(score * 100, 2)
 
