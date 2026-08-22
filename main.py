@@ -20,25 +20,56 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "base_cnnlstm_final.h5")
 model = None
 
-# دالة مخصصة لتجاوز خصائص الـ Quantization المعترضة أثناء قراءة الطبقات
-from tensorflow.keras.layers import Dense
-class SafeDense(Dense):
-    @classmethod
-    from_config(cls, config):
-        config.pop('quantization_config', None)
-        return super().from_config(config)
-
-if os.path.exists(MODEL_PATH):
-    try:
-        # محاولة التحميل مع تمرير الـ SafeDense في الـ custom_objects
-        model = load_model(MODEL_PATH, compile=False, custom_objects={'Dense': SafeDense})
+try:
+    if os.path.exists(MODEL_PATH):
+        model = load_model(MODEL_PATH, compile=False)
         print("✅ تم تحميل نموذج الذكاء الاصطناعي بنجاح تام!")
+    else:
+        print(f"❌ ملف الموديل غير موجود في المسار: {MODEL_PATH}")
+except Exception as e:
+    print(f"⚠️ خطأ أثناء التحميل: {e}")
+
+class MeterData(BaseModel):
+    CONS_NO: str
+    readings: list[float]
+
+@app.get("/")
+def home():
+    return {
+        "status": "Server is running successfully", 
+        "model_loaded": model is not None,
+        "model_path": MODEL_PATH
+    }
+
+@app.post("/predict")
+def predict_theft(data: MeterData):
+    try:
+        readings = data.readings
+        if not readings:
+            raise HTTPException(status_code=400, detail="القراءات فارغة")
+
+        if model is None:
+            raise HTTPException(status_code=500, detail="نموذج الذكاء الاصطناعي لم يتم تحميله في الذاكرة")
+
+        input_data = np.array(readings, dtype=float)
+        
+        if input_data.ndim == 1:
+            input_data = np.expand_dims(input_data, axis=0)
+            if len(model.input_shape) == 3:
+                input_data = np.expand_dims(input_data, axis=-1)
+
+        prediction = model.predict(input_data)
+        
+        score = float(prediction[0][0]) if prediction.ndim > 1 else float(prediction[0])
+        is_anomaly = score >= 0.5
+        anomaly_score = round(score * 100, 2)
+
+        return {
+            "CONS_NO": data.CONS_NO,
+            "is_anomaly": is_anomaly,
+            "anomaly_score": anomaly_score,
+            "status": "High Risk / Theft Suspected" if is_anomaly else "Normal Meter",
+            "message": "تم تحليل بيانات العداد بنجاح عبر نموذج CNN-LSTM الحقيقي"
+        }
     except Exception as e:
-        print(f"⚠️ فشل التحميل بالطريقة الأولى، جاري المحاولة العادية: {e}")
-        try:
-            model = load_model(MODEL_PATH, compile=False)
-            print("✅ تم التحميل بالطريقة العادية بنجاح!")
-        except Exception as ex:
-            print(f"❌ خطأ نهائي في تحميل الموديل: {ex}")
-else:
-    print(f"❌ ملف الموديل غير موجود في المسار: {MODEL_PATH}")
+        raise HTTPException(status_code=500, detail=str(e))
