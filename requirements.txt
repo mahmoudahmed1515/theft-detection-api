@@ -3,6 +3,6 @@ uvicorn
 numpy==1.26.4
 scikit-learn==1.6.1
 joblib
-tensorflow==2.15.0
+tensorflow==2.20.0
 tf-keras==2.15.0
 pydantic
